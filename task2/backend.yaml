@@ -1,0 +1,85 @@
+---
+- name: Deploy backend application
+  hosts: web_servers
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Python3, pip, and venv
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Create backend directory
+      file:
+        path: /opt/backend
+        state: directory
+        mode: '0755'
+
+    - name: Create virtual environment
+      command:
+        cmd: python3 -m venv /opt/backend/venv
+        creates: /opt/backend/venv
+
+    - name: Install required Python packages
+      pip:
+        name:
+          - Flask
+          - flask-cors
+          - pymongo
+        virtualenv: /opt/backend/venv
+
+    - name: Copy backend application files
+      copy:
+        src: /home/palmu/Assignment5/backend/
+        dest: /opt/backend
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Fix virtual environment permissions
+      file:
+        path: /opt/backend/venv
+        owner: ubuntu
+        group: ubuntu
+        recurse: yes
+
+    - name: Create systemd service for Flask app
+      copy:
+        dest: /etc/systemd/system/flask-backend.service
+        content: |
+          [Unit]
+          Description=Flask Backend Application
+          After=network.target
+
+          [Service]
+          User=ubuntu
+          Group=ubuntu
+          WorkingDirectory=/opt/backend
+          ExecStart=/opt/backend/venv/bin/python app.py
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Start and enable Flask backend service
+      systemd:
+        name: flask-backend
+        state: started
+        enabled: yes
+
+    - name: Wait for backend to be ready
+      wait_for:
+        port: 8000
+        delay: 10
+        timeout: 60
